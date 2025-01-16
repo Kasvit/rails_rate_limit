@@ -22,7 +22,7 @@ module RailsRateLimit
           begin
             limiter.perform!
           rescue RailsRateLimit::RateLimitExceeded
-            handler = on_exceeded || RailsRateLimit.configuration.default_on_controller_exceeded
+            handler = on_exceeded.nil? ? RailsRateLimit.configuration.default_on_controller_exceeded : on_exceeded
             controller.instance_exec(&handler)
           end
         end

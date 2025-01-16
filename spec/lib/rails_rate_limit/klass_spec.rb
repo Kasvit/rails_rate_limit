@@ -127,7 +127,7 @@ RSpec.describe RailsRateLimit::Klass do
           set_rate_limit :test_method,
                          limit: 2,
                          period: 3600,
-                         on_exceeded: -> { 
+                         on_exceeded: lambda {
                            @handler_called = true
                            "rate limit exceeded"
                          }
@@ -162,9 +162,9 @@ RSpec.describe RailsRateLimit::Klass do
 
       it "executes default handler and returns nil when limit is exceeded" do
         handler_called = false
-        
+
         RailsRateLimit.configure do |config|
-          config.default_on_method_exceeded = -> { 
+          config.default_on_method_exceeded = lambda {
             handler_called = true
             "default exceeded"
           }
@@ -172,7 +172,7 @@ RSpec.describe RailsRateLimit::Klass do
 
         instance = test_class_with_default_handler.new
         2.times { instance.test_method }
-        
+
         expect(instance.test_method).to be_nil
         expect(handler_called).to be true
       end

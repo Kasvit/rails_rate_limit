@@ -23,7 +23,7 @@ module RailsRateLimit
             limiter.perform!
             original_method.bind(self).call(*args, &block)
           rescue RailsRateLimit::RateLimitExceeded
-            handler = on_exceeded || RailsRateLimit.configuration.default_on_method_exceeded
+            handler = on_exceeded.nil? ? RailsRateLimit.configuration.default_on_method_exceeded : on_exceeded
             instance_exec(&handler)
             nil
           end
