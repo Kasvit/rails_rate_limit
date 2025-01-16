@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         ruby:
-          - '3.4.1'
+          - '3.1.0'
 
     steps:
       - uses: actions/checkout@v4
@@ -23,5 +23,20 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run the default task
-        run: bundle exec rake
+      - name: Start Memcached
+        run: |
+          sudo apt-get install -y memcached
+          memcached -m 64 -u memcache -p 11211 -u memcache &
+      - name: Start Redis
+        run: |
+          sudo apt-get install -y redis-server
+          sudo service redis-server start
+      - name: Run gem specs
+        run: |
+          bundle install
+          bundle exec rspec
+      - name: Run dummy app specs
+        run: |
+          cd spec/dummy
+          bundle install
+          bundle exec rspec

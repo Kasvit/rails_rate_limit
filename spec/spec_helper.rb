@@ -6,8 +6,8 @@ require "timecop"
 require "dalli"
 require "logger"
 
-# Налаштовуємо з'єднання для тестів
 RailsRateLimit.configure do |config|
+  config.default_store = :memory
   config.redis_connection = Redis.new
   config.memcached_connection = Dalli::Client.new("localhost:11211")
   config.logger = Logger.new(nil)

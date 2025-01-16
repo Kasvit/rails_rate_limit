@@ -3,26 +3,33 @@
 class HomeController < ApplicationController
   include RailsRateLimit::Controller
 
-  controller_rate_limit limit: -> { limit },
-                        period: 30.seconds.to_i,
-                        by: -> { rate_by },
-                        response: -> { rate_limit_exceeded }
+  set_rate_limit limit: 5,
+                 period: 1.minute,
+                 only: :index
 
   def index
-    render json: { message: "hello world" }, status: :ok
+    render json: { message: "Hello from rate-limited action!" }
   end
 
-  private
+  def send_notification
+    notification = Notification.first_or_create!
+    message = notification.deliver
 
-  def limit
-    3
+    if message
+      render json: { message: message }
+    else
+      render json: { error: "Rate limit exceeded for notifications" }, status: :too_many_requests
+    end
   end
 
-  def rate_by
-    "test_user"
-  end
+  def generate_report
+    generator = ReportGenerator.new(params[:type] || "default")
+    message = generator.generate
 
-  def rate_limit_exceeded
-    render json: { message: "Rate limit exceeded" }, status: :too_many_requests
+    if message
+      render json: { message: message }
+    else
+      render json: { error: "Rate limit exceeded for reports" }, status: :too_many_requests
+    end
   end
 end

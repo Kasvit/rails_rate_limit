@@ -2,98 +2,102 @@
 
 require_relative "../rails_helper"
 
-RSpec.describe HomeController, type: :controller do
-  describe "GET #index" do
-    before(:all) do
-      RailsRateLimit.configure do |config|
-        config.logger = Logger.new($stdout)
-        config.logger.level = Logger::DEBUG
+RSpec.describe HomeController, type: :request do
+  describe "GET /index" do
+    %i[memory redis memcached].each do |store|
+      context "with #{store} store" do
+        before do
+          RailsRateLimit.configuration.default_store = store
+          case store
+          when :memory
+            RailsRateLimit::Stores::Memory.instance.clear
+          when :redis
+            RailsRateLimit.configuration.redis_connection.flushdb
+          when :memcached
+            RailsRateLimit.configuration.memcached_connection.flush
+          end
+        end
+
+        it "returns success response" do
+          get root_path
+          expect(response).to have_http_status(:success)
+        end
+
+        it "limits requests" do
+          5.times { get root_path }
+
+          get root_path
+          expect(response).to have_http_status(:too_many_requests)
+        end
       end
     end
+  end
 
-    describe "when store to redis" do
-      before do
-        allow_any_instance_of(HomeController).to receive(:rate_by).and_return("test_user")
-        allow_any_instance_of(HomeController).to receive(:limit).and_return(2)
-        RailsRateLimit.configure do |config|
-          config.default_store = :redis
-          config.redis_connection = Redis.new
+  describe "GET /send_notification" do
+    %i[memory redis memcached].each do |store|
+      context "with #{store} store" do
+        before do
+          RailsRateLimit.configuration.default_store = store
+          case store
+          when :memory
+            RailsRateLimit::Stores::Memory.instance.clear
+          when :redis
+            RailsRateLimit.configuration.redis_connection.flushdb
+          when :memcached
+            RailsRateLimit.configuration.memcached_connection.flush
+          end
         end
-      end
 
-      it "returns a too many requests response" do
-        2.times do
-          get :index
-          expect(response).to have_http_status(:ok)
-          Timecop.travel(5.seconds.from_now)
+        it "delivers notification successfully" do
+          get send_notification_path
+          expect(response).to have_http_status(:success)
+          expect(JSON.parse(response.body)["message"]).to include("delivered")
         end
 
-        get :index # 3rd request
-        expect(response).to have_http_status(:too_many_requests)
+        it "limits notification delivery" do
+          3.times { get send_notification_path }
 
-        Timecop.travel(20.seconds.from_now)
-        get :index # should work as first request expired
-        expect(response).to have_http_status(:ok)
-
-        get :index # should fail again
-        expect(response).to have_http_status(:too_many_requests)
+          get send_notification_path
+          expect(response).to have_http_status(:too_many_requests)
+        end
       end
     end
+  end
 
-    describe "when store to memory" do
-      before do
-        allow_any_instance_of(HomeController).to receive(:rate_by).and_return("test_user")
-        allow_any_instance_of(HomeController).to receive(:limit).and_return(2)
-        RailsRateLimit.configure do |config|
-          config.default_store = :memory
-        end
-      end
-
-      it "returns a too many requests response" do
-        2.times do |i|
-          get :index
-          expect(response).to have_http_status(:ok), "Failed on request #{i + 1}"
-          Timecop.travel(5.seconds.from_now)
-        end
-
-        get :index # 3rd request
-        expect(response).to have_http_status(:too_many_requests), "Failed on 3rd request"
-
-        Timecop.travel(20.seconds.from_now)
-        get :index # should work as first request expired
-        expect(response).to have_http_status(:ok), "Failed after time travel"
-
-        get :index # should fail again
-        expect(response).to have_http_status(:too_many_requests), "Failed on last request"
-      end
-    end
-
-    describe "when store to memcached" do
-      before do
-        allow_any_instance_of(HomeController).to receive(:rate_by).and_return("test_user")
-        allow_any_instance_of(HomeController).to receive(:limit).and_return(2)
-        RailsRateLimit.configure do |config|
-          config.default_store = :memcached
-          config.memcached_connection = Dalli::Client.new("localhost:11211")
-        end
-      end
-
-      it "returns a too many requests response" do
-        2.times do
-          get :index
-          expect(response).to have_http_status(:ok)
-          Timecop.travel(5.seconds.from_now)
+  describe "GET /generate_report" do
+    %i[memory redis memcached].each do |store|
+      context "with #{store} store" do
+        before do
+          RailsRateLimit.configuration.default_store = store
+          case store
+          when :memory
+            RailsRateLimit::Stores::Memory.instance.clear
+          when :redis
+            RailsRateLimit.configuration.redis_connection.flushdb
+          when :memcached
+            RailsRateLimit.configuration.memcached_connection.flush
+          end
         end
 
-        get :index # 3rd request
-        expect(response).to have_http_status(:too_many_requests)
+        it "generates report successfully" do
+          get generate_report_path(type: "sales")
+          expect(response).to have_http_status(:success)
+          expect(JSON.parse(response.body)["message"]).to include("Generated sales report")
+        end
 
-        Timecop.travel(20.seconds.from_now)
-        get :index # should work as first request expired
-        expect(response).to have_http_status(:ok)
+        it "limits report generation" do
+          2.times { get generate_report_path(type: "sales") }
 
-        get :index # should fail again
-        expect(response).to have_http_status(:too_many_requests)
+          get generate_report_path(type: "sales")
+          expect(response).to have_http_status(:too_many_requests)
+        end
+
+        it "tracks limits separately for different report types" do
+          2.times { get generate_report_path(type: "sales") }
+
+          get generate_report_path(type: "inventory")
+          expect(response).to have_http_status(:success)
+        end
       end
     end
   end
