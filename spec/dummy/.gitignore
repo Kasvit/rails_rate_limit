@@ -1,0 +1,33 @@
+# Logs
+log/*.log
+
+# Temporary files
+tmp/
+storage/
+node_modules/
+
+# Test database
+db/*.sqlite3
+db/*.sqlite3-journal
+
+# Assets
+public/assets/
+public/packs/
+public/packs-test/
+
+# Secrets
+config/credentials.yml.enc
+config/master.key
+.env
+
+# Test results
+coverage/
+spec/examples.txt
+
+# Editor files
+*.swp
+*~
+.project
+.idea/
+.vscode/
+.DS_Store
