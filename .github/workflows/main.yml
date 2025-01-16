@@ -23,6 +23,14 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+      - name: Start Memcached
+        run: |
+          sudo apt-get install -y memcached
+          memcached -m 64 -u memcache -p 11211 -u memcache &
+      - name: Start Redis
+        run: |
+          sudo apt-get install -y redis-server
+          sudo service redis-server start
       - name: Run gem specs
         run: |
           bundle install
