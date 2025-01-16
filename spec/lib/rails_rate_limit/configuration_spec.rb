@@ -22,22 +22,40 @@ RSpec.describe RailsRateLimit::Configuration do
       expect(subject.logger).to be_nil
     end
 
-    it "sets a default response" do
-      expect(subject.default_response).to be_a(Proc)
+    it "sets default on_controller_exceeded handler" do
+      expect(subject.default_on_controller_exceeded).to be_a(Proc)
+    end
+
+    it "sets default on_method_exceeded handler" do
+      expect(subject.default_on_method_exceeded).to be_a(Proc)
     end
   end
 
-  describe "#default_response=" do
+  describe "#default_on_controller_exceeded=" do
     it "raises an error if handler is not a Proc" do
       expect do
-        subject.default_response = "not a proc"
-      end.to raise_error(ArgumentError, "default_response must be a Proc")
+        subject.default_on_controller_exceeded = "not a proc"
+      end.to raise_error(ArgumentError, "default_on_controller_exceeded must be a Proc")
     end
 
-    it "sets the default_response if handler is a Proc" do
+    it "sets the default_on_controller_exceeded if handler is a Proc" do
       proc = -> { "custom response" }
-      subject.default_response = proc
-      expect(subject.default_response).to eq(proc)
+      subject.default_on_controller_exceeded = proc
+      expect(subject.default_on_controller_exceeded).to eq(proc)
+    end
+  end
+
+  describe "#default_on_method_exceeded=" do
+    it "raises an error if handler is not a Proc" do
+      expect do
+        subject.default_on_method_exceeded = "not a proc"
+      end.to raise_error(ArgumentError, "default_on_method_exceeded must be a Proc")
+    end
+
+    it "sets the default_on_method_exceeded if handler is a Proc" do
+      proc = -> { "custom response" }
+      subject.default_on_method_exceeded = proc
+      expect(subject.default_on_method_exceeded).to eq(proc)
     end
   end
 end

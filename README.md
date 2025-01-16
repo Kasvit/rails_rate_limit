@@ -1,6 +1,9 @@
-# RailsRateLimit
+# Rails Rate Limit
 
-A flexible and robust rate limiting solution for Rails applications. Supports Redis, Memcached, and Memory stores.
+[![Gem Version](https://badge.fury.io/rb/rails_rate_limit.svg)](https://badge.fury.io/rb/rails_rate_limit)
+[![Build Status](https://github.com/kasvit77/rails_rate_limit/workflows/Ruby/badge.svg)](https://github.com/kasvit77/rails_rate_limit/actions)
+
+A flexible and robust rate limiting solution for Ruby on Rails applications. Supports rate limiting for both HTTP requests and method calls, with multiple storage backends (Redis, Memcached, Memory).
 
 ## Installation
 
@@ -18,195 +21,148 @@ $ bundle install
 
 ## Configuration
 
-### Basic Setup
-
-Create `config/initializers/rails_rate_limit.rb`:
+Create an initializer `config/initializers/rails_rate_limit.rb`:
 
 ```ruby
 RailsRateLimit.configure do |config|
-  # Choose storage backend (:redis, :memory, or :memcached)
-  config.default_store = :redis
+  config.default_store = :redis # or :memcached, or :memory
+  config.redis_connection = Redis.new # optional, if using Redis
+  config.memcached_connection = Dalli::Client.new # optional, if using Memcached
   
-  # Configure Redis connection
-  config.redis_connection = Redis.new(url: 'redis://localhost:6379/0')
+  # Default handler for controllers (HTTP requests)
+  config.default_on_controller_exceeded = ->(controller) {
+    controller.render json: { error: 'Too many requests' }, status: :too_many_requests
+  }
   
-  # OR configure Memcached
-  config.memcached_connection = Dalli::Client.new('localhost:11211')
-  
-  # Configure logging
-  config.logger = Rails.logger
-  
-  # Custom default response
-  config.default_response = -> {
-    render json: {
-      error: 'Rate limit exceeded',
-      retry_after: response.headers["Retry-After"]
-    }, status: :too_many_requests
+  # Default handler for methods
+  config.default_on_method_exceeded = -> { 
+    # Your default logic for methods
+    # The return value will be discarded, method will return nil
   }
 end
 ```
 
-### Controller Usage
+## Usage
 
-#### Basic Usage
+### Rate Limiting Controllers
+
+Include the module and set rate limits for your controllers:
 
 ```ruby
 class ApiController < ApplicationController
   include RailsRateLimit::Controller
 
-  # Limit: 100 requests per hour
-  controller_rate_limit limit: 100,
-                       period: 1.hour,
-                       only: [:index, :show]
+  # Limit all actions to 100 requests per minute
+  set_rate_limit limit: 100, period: 1.minute
+
+  # Or limit specific actions with custom options
+  set_rate_limit only: [:create, :update],
+                limit: 50,
+                period: 1.hour,
+                by: -> { current_user.id },
+                on_exceeded: -> {
+                  render json: { error: 'Custom error message' }, status: :too_many_requests
+                }
 end
 ```
 
-#### Advanced Usage
+### Rate Limiting Methods
+
+You can limit any method calls in your classes:
 
 ```ruby
-class ApiController < ApplicationController
-  include RailsRateLimit::Controller
+class ApiClient
+  include RailsRateLimit::Klass
 
-  # Dynamic limit based on user type
-  controller_rate_limit limit: -> { current_user&.premium? ? 1000 : 100 },
-                       period: 1.hour,
-                       by: -> { "user:#{current_user&.id}" },
-                       store: :redis,
-                       only: [:create, :update]
+  def make_request
+    # Your API call logic here
+  end
 
-  # Different limits for different endpoints
-  controller_rate_limit limit: 1000,
-                       period: 1.day,
-                       by: -> { request.remote_ip },
-                       store: :memcached,
-                       only: :index
+  # IMPORTANT: set_rate_limit must be called AFTER method definition
+  set_rate_limit :make_request,
+                limit: 100,
+                period: 1.minute,
+                by: -> { "client:#{id}" }
 
-  # Custom rate limit exceeded response
-  controller_rate_limit limit: 50,
-                       period: 1.hour,
-                       response: -> {
-                         render json: {
-                           error: 'Rate limit exceeded',
-                           try_again_in: response.headers["Retry-After"]
-                         }, status: 429
-                       },
-                       only: :search
+  # Custom error handling
+  set_rate_limit :another_method,
+                limit: 10,
+                period: 1.hour,
+                on_exceeded: -> { 
+                  # Custom logic when limit is exceeded
+                  notify_admin
+                  # Any return value will be discarded, method will return nil
+                }
 end
 ```
 
 ### Available Options
 
-#### Core Parameters
+- `limit`: Maximum number of requests/calls allowed
+- `period`: Time period for the limit (in seconds or ActiveSupport::Duration)
+- `by`: Lambda/Proc to generate unique identifier (default: IP for controllers, "ClassName:id" for methods)
+- `store`: Override default storage backend
+- `on_exceeded`: Custom handler for rate limit exceeded
 
-- `limit`: Number of allowed requests
-  - Static number: `limit: 100`
-  - Dynamic value: `limit: -> { current_user.rate_limit }`
+### Rate Limit Exceeded Handling
 
-- `period`: Time window
-  - Uses ActiveSupport::Duration
-  - Examples: `1.hour`, `30.minutes`, `1.day`
+The gem provides different default behaviors for controllers and methods:
 
-- `by`: Request grouping identifier
-  - Default: IP address
-  - String: `by: "custom_key"`
-  - Dynamic value: `by: -> { "#{request.remote_ip}:#{current_user&.id}" }`
+1. For controllers (HTTP requests):
+   - The `on_exceeded` handler (or `default_on_controller_exceeded` if not specified) is called
+   - By default, returns HTTP 429 with a JSON error message
+   - Headers are automatically added with limit information
+   - The handler's return value is used (usually render/redirect)
 
-- `store`: Counter storage backend
-  - `:redis` - recommended for production
-  - `:memcached` - Redis alternative
-  - `:memory` - for development/testing
+2. For methods:
+   - The `on_exceeded` handler (or `default_on_method_exceeded` if not specified) is called
+   - The event is logged if a logger is configured
+   - Returns `nil` after handler execution to indicate no result
+   - No exception is raised, making it easier to handle in your code
 
-- `response`: Custom rate limit exceeded response
-  - Proc executed in controller context
-  - Default: returns JSON error with 429 status
-
-#### Additional Options
-
-All other options are passed to `before_action`, for example:
-- `only: [:index, :show]`
-- `except: [:create, :update]`
-- `if: -> { current_user.present? }`
-- `unless: -> { Rails.env.development? }`
-
-### HTTP Headers
-
-The gem automatically adds these headers to the response:
-
-- `X-RateLimit-Limit`: Maximum number of requests allowed
-- `X-RateLimit-Remaining`: Number of requests remaining
-- `X-RateLimit-Reset`: Unix timestamp when the limit resets
-- `Retry-After`: Seconds until limit reset (only when exceeded)
-
-### Storage Backends
-
-#### Redis
-```ruby
-# config/initializers/rails_rate_limit.rb
-config.default_store = :redis
-config.redis_connection = Redis.new(url: 'redis://localhost:6379/0')
-
-# In controller
-controller_rate_limit limit: 100,
-                     period: 1.hour,
-                     store: :redis
-```
-
-#### Memcached
-```ruby
-# config/initializers/rails_rate_limit.rb
-config.default_store = :memcached
-config.memcached_connection = Dalli::Client.new('localhost:11211')
-
-# In controller
-controller_rate_limit limit: 100,
-                     period: 1.hour,
-                     store: :memcached
-```
-
-#### Memory
-```ruby
-# config/initializers/rails_rate_limit.rb
-config.default_store = :memory
-
-# In controller
-controller_rate_limit limit: 100,
-                     period: 1.hour,
-                     store: :memory
-```
-
-### Logging and Monitoring
+You can customize both default handlers in the configuration:
 
 ```ruby
 RailsRateLimit.configure do |config|
-  # Configure logger
-  config.logger = Logger.new('log/rate_limit.log')
+  # Custom default handler for controllers
+  config.default_on_controller_exceeded = ->(controller) {
+    controller.redirect_to "/", alert: "Please try again later"
+  }
+  
+  # Custom default handler for methods
+  config.default_on_method_exceeded = -> {
+    # Your default logic for methods
+    # Method will return nil after handler execution
+  }
 end
 ```
 
-Example log when limit is exceeded:
-```
-[RailsRateLimit] Rate limit exceeded for key: user:123, limit: 100, period: 3600
-```
+### HTTP Headers
+
+For controller rate limiting, the following headers are automatically added:
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Remaining requests in current period
+- `X-RateLimit-Reset`: Time when the current period will reset (Unix timestamp)
+
+## Storage Backends
+
+### Redis
+Requires the `redis-rails` gem. Best for distributed systems.
+
+### Memcached
+Requires the `dalli` gem. Good balance of performance and features.
+
+### Memory
+No additional dependencies. Perfect for development or single-server setups.
 
 ## Development
 
-After checking out the repo:
+After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests.
 
-1. Install dependencies:
-```bash
-$ bin/setup
-```
+## Contributing
 
-2. Run the tests:
-```bash
-$ bundle exec rspec
-```
-
-3. Start a console for experiments:
-```bash
-$ bin/console
-```
+Bug reports and pull requests are welcome on GitHub at https://github.com/kasvit77/rails_rate_limit. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-This gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+The gem is available as open source under the terms of the [MIT License](LICENSE.txt).

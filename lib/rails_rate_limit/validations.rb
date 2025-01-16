@@ -7,7 +7,7 @@ module RailsRateLimit
         validate_limit!(options[:limit])
         validate_period!(options[:period])
         validate_by!(options[:by]) if options[:by]
-        validate_response!(options[:response]) if options[:response]
+        validate_on_exceeded!(options[:on_exceeded]) if options[:on_exceeded]
         validate_store!(options[:store]) if options[:store]
       end
 
@@ -36,10 +36,10 @@ module RailsRateLimit
         raise ArgumentError, "by must be a String or Proc"
       end
 
-      def validate_response!(response)
-        return if response.is_a?(Proc)
+      def validate_on_exceeded!(on_exceeded)
+        return if on_exceeded.is_a?(Proc)
 
-        raise ArgumentError, "response must be a Proc"
+        raise ArgumentError, "on_exceeded must be a Proc"
       end
 
       def validate_store!(store)
