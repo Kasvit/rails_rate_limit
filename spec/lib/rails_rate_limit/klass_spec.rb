@@ -180,15 +180,15 @@ RSpec.describe RailsRateLimit::Klass do
 
     it "handles rate limit exceeded with custom handler" do
       2.times { instance.test_method }
-      
+
       result = instance.test_method
-      
+
       expect(result).to be_nil
     end
 
     it "does not raise error after custom handler execution" do
       2.times { instance.test_method }
-      
+
       expect { instance.test_method }.not_to raise_error
     end
   end

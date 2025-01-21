@@ -1,4 +1,4 @@
-name: Ruby
+name: CI/CD
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     name: Ruby ${{ matrix.ruby }}
     strategy:
@@ -40,3 +40,25 @@ jobs:
           cd spec/dummy
           bundle install
           bundle exec rspec
+
+  cd:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.0'
+
+      - name: Build gem
+        run: gem build rails_rate_limit.gemspec
+
+      - name: Push gem to RubyGems
+        run: gem push rails_rate_limit-*.gem
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }} 
