@@ -29,6 +29,7 @@ RSpec.describe RailsRateLimit::Klass do
     RailsRateLimit.configure do |config|
       config.default_store = :memory
       config.handle_klass_exceeded = -> { nil }
+      config.handle_klass_exceeded = -> { nil }
     end
     RailsRateLimit::Stores::Memory.instance.clear
   end
@@ -135,11 +136,13 @@ RSpec.describe RailsRateLimit::Klass do
       end
 
       it "executes custom handler and returns its result when limit is exceeded" do
+      it "executes custom handler and returns its result when limit is exceeded" do
         instance = test_class_with_handler.new
 
         2.times { instance.test_method }
 
         result = instance.test_method
+        expect(result).to eq("rate limit exceeded")
         expect(result).to eq("rate limit exceeded")
         expect(instance.handler_called).to be true
       end
@@ -161,9 +164,11 @@ RSpec.describe RailsRateLimit::Klass do
       end
 
       it "executes default handler and returns its result when limit is exceeded" do
+      it "executes default handler and returns its result when limit is exceeded" do
         handler_called = false
 
         RailsRateLimit.configure do |config|
+          config.handle_klass_exceeded = lambda {
           config.handle_klass_exceeded = lambda {
             handler_called = true
             "default exceeded"
@@ -173,6 +178,7 @@ RSpec.describe RailsRateLimit::Klass do
         instance = test_class_with_default_handler.new
         2.times { instance.test_method }
 
+        expect(instance.test_method).to eq("default exceeded")
         expect(instance.test_method).to eq("default exceeded")
         expect(handler_called).to be true
       end
