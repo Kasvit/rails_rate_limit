@@ -153,17 +153,11 @@ class ApiClient
   # You can also set rate limits directly if you have both instance and class methods with the same name
   set_instance_rate_limit :process,             # For instance method
                          limit: 10,
-                         period: 1.hour,
-                         by: nil,
-                         store: nil,
-                         on_exceeded: nil
+                         period: 1.hour
 
   set_class_rate_limit :process,                # For class method
                       limit: 5,
-                      period: 1.hour,
-                      by: nil,
-                      store: nil,
-                      on_exceeded: nil
+                      period: 1.hour
 end
 ```
 

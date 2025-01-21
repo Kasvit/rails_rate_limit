@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     name: CD
     needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: false # github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout code
