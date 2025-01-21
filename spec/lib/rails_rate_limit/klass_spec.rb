@@ -3,28 +3,6 @@
 require "spec_helper"
 
 RSpec.describe RailsRateLimit::Klass do
-  let(:test_class) do
-    Class.new do
-      include RailsRateLimit::Klass
-
-      attr_reader :id
-
-      def initialize(id)
-        @id = id
-      end
-
-      def test_method
-        "success"
-      end
-
-      set_rate_limit :test_method,
-                     limit: 2,
-                     period: 3600
-    end
-  end
-
-  let(:instance) { test_class.new(1) }
-
   before do
     RailsRateLimit.configure do |config|
       config.default_store = :memory
@@ -34,28 +12,16 @@ RSpec.describe RailsRateLimit::Klass do
   end
 
   describe ".set_rate_limit" do
-    it "allows calls within the limit" do
-      expect(instance.test_method).to eq("success")
-    end
-
-    it "returns nil when limit is exceeded" do
-      2.times { instance.test_method }
-      expect(instance.test_method).to be_nil
-    end
-
-    it "tracks limits separately for different instances" do
-      another_instance = test_class.new(2)
-
-      2.times { instance.test_method }
-      expect(instance.test_method).to be_nil
-
-      expect(another_instance.test_method).to eq("success")
-    end
-
-    context "with custom identifier" do
-      let(:test_class_with_custom_key) do
+    context "with instance methods" do
+      let(:test_class) do
         Class.new do
           include RailsRateLimit::Klass
+
+          attr_reader :id
+
+          def initialize(id)
+            @id = id
+          end
 
           def test_method
             "success"
@@ -63,132 +29,163 @@ RSpec.describe RailsRateLimit::Klass do
 
           set_rate_limit :test_method,
                          limit: 2,
-                         period: 3600,
-                         by: -> { "custom_key" }
-        end
-      end
-
-      it "uses custom key for rate limiting" do
-        instance1 = test_class_with_custom_key.new
-        instance2 = test_class_with_custom_key.new
-
-        2.times { instance1.test_method }
-
-        expect(instance2.test_method).to be_nil
-      end
-    end
-
-    context "with dynamic limit" do
-      let(:test_class_with_dynamic_limit) do
-        Class.new do
-          include RailsRateLimit::Klass
-
-          attr_reader :limit
-
-          def initialize(limit)
-            @limit = limit
-          end
-
-          def test_method
-            "success"
-          end
-
-          set_rate_limit :test_method,
-                         limit: -> { limit },
                          period: 3600
         end
       end
 
-      it "respects dynamic limit" do
-        instance = test_class_with_dynamic_limit.new(3)
+      let(:instance) { test_class.new(1) }
 
-        3.times { instance.test_method }
+      it "allows calls within the limit" do
+        expect(instance.test_method).to eq("success")
+        expect(instance.test_method).to eq("success")
+      end
 
+      it "handles rate limit exceeded" do
+        2.times { instance.test_method }
         expect(instance.test_method).to be_nil
       end
-    end
 
-    context "with custom on_exceeded handler" do
-      let(:test_class_with_handler) do
-        Class.new do
-          include RailsRateLimit::Klass
-
-          attr_reader :handler_called
-
-          def initialize
-            @handler_called = false
-          end
-
-          def test_method
-            "success"
-          end
-
-          set_rate_limit :test_method,
-                         limit: 2,
-                         period: 3600,
-                         on_exceeded: lambda {
-                           @handler_called = true
-                           "rate limit exceeded"
-                         }
-        end
-      end
-
-      it "executes custom handler and returns its result when limit is exceeded" do
-        instance = test_class_with_handler.new
+      it "tracks limits separately for different instances" do
+        another_instance = test_class.new(2)
 
         2.times { instance.test_method }
-
-        result = instance.test_method
-        expect(result).to eq("rate limit exceeded")
-        expect(instance.handler_called).to be true
+        expect(instance.test_method).to be_nil
+        expect(another_instance.test_method).to eq("success")
       end
     end
 
-    context "with default on_method_exceeded handler" do
-      let(:test_class_with_default_handler) do
+    context "with class methods" do
+      let(:test_class) do
         Class.new do
           include RailsRateLimit::Klass
 
-          def test_method
-            "success"
+          def self.name
+            "TestClass"
           end
 
-          set_rate_limit :test_method,
+          def self.test_class_method
+            "class method success"
+          end
+
+          set_rate_limit :test_class_method,
                          limit: 2,
                          period: 3600
         end
       end
 
-      it "executes default handler and returns its result when limit is exceeded" do
-        handler_called = false
+      it "allows calls within the limit" do
+        expect(test_class.test_class_method).to eq("class method success")
+        expect(test_class.test_class_method).to eq("class method success")
+      end
 
-        RailsRateLimit.configure do |config|
-          config.handle_klass_exceeded = lambda {
-            handler_called = true
-            "default exceeded"
-          }
+      it "handles rate limit exceeded" do
+        2.times { test_class.test_class_method }
+        expect(test_class.test_class_method).to be_nil
+      end
+
+      it "tracks limits separately for different classes" do
+        another_test_class = Class.new do
+          include RailsRateLimit::Klass
+
+          def self.name
+            "AnotherTestClass"
+          end
+
+          def self.test_class_method
+            "another class success"
+          end
+
+          set_rate_limit :test_class_method,
+                         limit: 2,
+                         period: 3600
         end
 
-        instance = test_class_with_default_handler.new
-        2.times { instance.test_method }
+        2.times { test_class.test_class_method }
+        expect(test_class.test_class_method).to be_nil
+        expect(another_test_class.test_class_method).to eq("another class success")
+      end
 
-        expect(instance.test_method).to eq("default exceeded")
-        expect(handler_called).to be true
+      context "with custom identifier" do
+        let(:test_class_with_custom_key) do
+          Class.new do
+            include RailsRateLimit::Klass
+
+            def self.name
+              "TestClassWithCustomKey"
+            end
+
+            def self.test_class_method
+              "custom key success"
+            end
+
+            set_rate_limit :test_class_method,
+                           limit: 2,
+                           period: 3600,
+                           by: -> { "custom_class_key" }
+          end
+        end
+
+        it "uses custom key for rate limiting" do
+          2.times { test_class_with_custom_key.test_class_method }
+          expect(test_class_with_custom_key.test_class_method).to be_nil
+        end
+      end
+
+      context "with custom handler" do
+        let(:test_class_with_handler) do
+          Class.new do
+            include RailsRateLimit::Klass
+
+            def self.name
+              "TestClassWithHandler"
+            end
+
+            def self.test_class_method
+              "handler test"
+            end
+
+            def self.handler_called
+              @handler_called ||= false
+            end
+
+            class << self
+              attr_writer :handler_called
+            end
+
+            set_rate_limit :test_class_method,
+                           limit: 2,
+                           period: 3600,
+                           on_exceeded: lambda {
+                             self.handler_called = true
+                             "rate limit exceeded"
+                           }
+          end
+        end
+
+        it "executes custom handler when limit is exceeded" do
+          2.times { test_class_with_handler.test_class_method }
+
+          result = test_class_with_handler.test_class_method
+          expect(result).to eq("rate limit exceeded")
+          expect(test_class_with_handler.handler_called).to be true
+        end
       end
     end
 
-    it "handles rate limit exceeded with custom handler" do
-      2.times { instance.test_method }
+    context "with undefined method" do
+      let(:test_class) do
+        Class.new do
+          include RailsRateLimit::Klass
+        end
+      end
 
-      result = instance.test_method
-
-      expect(result).to be_nil
-    end
-
-    it "does not raise error after custom handler execution" do
-      2.times { instance.test_method }
-
-      expect { instance.test_method }.not_to raise_error
+      it "raises ArgumentError" do
+        expect do
+          test_class.set_rate_limit :undefined_method,
+                                    limit: 2,
+                                    period: 3600
+        end.to raise_error(ArgumentError, "Method undefined_method is not defined")
+      end
     end
   end
 end

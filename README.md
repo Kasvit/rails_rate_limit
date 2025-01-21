@@ -1,4 +1,4 @@
-# Rails Rate Limit
+# **Rails Rate Limit**
 
 [![Gem Version](https://badge.fury.io/rb/rails_rate_limit.svg)](https://badge.fury.io/rb/rails_rate_limit)
 [![Build Status](https://github.com/kasvit/rails_rate_limit/workflows/Ruby/badge.svg)](https://github.com/kasvit/rails_rate_limit/actions)
@@ -99,23 +99,33 @@ end
 
 ### Rate Limiting Methods
 
-You can limit any instance method in your classes (class methods are not supported yet):
+You can limit both instance and class methods in your classes:
 
 ```ruby
 class ApiClient
-  include RailsRateLimit::Klass # include this module
+  include RailsRateLimit::Klass
 
+  # Instance method
   def make_request
     # Your API call logic here
   end
 
-  # IMPORTANT: set_rate_limit must be called AFTER method definition
-  # Basic usage
+  # Class method
+  def self.bulk_request
+    # Your API call logic here
+  end
+
+  # Rate limit for instance method
   set_rate_limit :make_request,
                 limit: 100,
                 period: 1.minute
 
-  # Advanced usage with all options
+  # Rate limit for class method
+  set_rate_limit :bulk_request,
+                limit: 10,
+                period: 1.hour
+
+  # Advanced usage with all options (instance method)
   set_rate_limit :another_method,
                 limit: 10,                       # Maximum calls allowed
                 period: 1.hour,                  # Time window for the limit
@@ -128,21 +138,26 @@ class ApiClient
                   nil # Method will return nil
                 }
 
-  # Example with default handler that raises error
-  set_rate_limit :risky_method,
-                limit: 5,
-                period: 1.minute
-                # Without on_exceeded option it will use default handler
-                # that raises RailsRateLimit::RateLimitExceeded
+  # Advanced usage with all options (class method)
+  set_rate_limit :another_class_method,
+                limit: 5,                        # Maximum calls allowed
+                period: 1.day,                   # Time window for the limit
+                by: -> { "global:#{name}" },     # Method call identifier
+                store: :redis,                   # Override default store
+                on_exceeded: -> {                # Custom error handler
+                  log_exceeded_event
+                  "Rate limit exceeded"          # Return custom message
+                }
 
-  # Example with custom error handling
-  def safe_request
-    risky_method
-  rescue RailsRateLimit::RateLimitExceeded => e
-    # Handle the error
-    Rails.logger.warn("Rate limit exceeded: #{e.message}")
-    nil # or any other fallback value
-  end
+  # Direct rate limit setting
+  # You can also set rate limits directly if you have both instance and class methods with the same name
+  set_instance_rate_limit :process,             # For instance method
+                         limit: 10,
+                         period: 1.hour
+
+  set_class_rate_limit :process,                # For class method
+                      limit: 5,
+                      period: 1.hour
 end
 ```
 
@@ -153,7 +168,8 @@ For both controllers and methods:
 - `period`: (Required) Time period for the limit (in seconds or ActiveSupport::Duration)
 - `by`: (Optional) Lambda/Proc to generate unique identifier
   - Default for controllers: `"#{controller.class.name}:#{controller.request.remote_ip}"`
-  - Default for methods: `"#{self.class.name}##{method_name}:#{respond_to?(:id) ? 'id='+id.to_s : 'object_id='+object_id.to_s}"`
+  - Default for instance methods: `"#{self.class.name}##{method_name}:#{respond_to?(:id) ? 'id='+id.to_s : 'object_id='+object_id.to_s}"`
+  - Default for class methods: `"#{class.name}.#{method_name}"`
 - `store`: (Optional) Override default storage backend (`:redis`, `:memcached`, `:memory`)
 - `on_exceeded`: (Optional) Custom handler for rate limit exceeded
 
