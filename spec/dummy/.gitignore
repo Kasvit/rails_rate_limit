@@ -31,3 +31,4 @@ spec/examples.txt
 .idea/
 .vscode/
 .DS_Store
+.byebug_history

@@ -1,7 +1,7 @@
 PATH
   remote: ../..
   specs:
-    rails_rate_limit (0.1.0)
+    rails_rate_limit (0.1.1)
       dalli
       rails (>= 6.1.7.3)
       redis-rails

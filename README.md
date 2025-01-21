@@ -3,12 +3,11 @@
 [![Gem Version](https://badge.fury.io/rb/rails_rate_limit.svg)](https://badge.fury.io/rb/rails_rate_limit)
 [![Build Status](https://github.com/kasvit/rails_rate_limit/workflows/Ruby/badge.svg)](https://github.com/kasvit/rails_rate_limit/actions)
 
-A flexible and robust rate limiting solution for Ruby on Rails applications. The gem implements a sliding window log algorithm, which means it tracks the exact timestamp of each request and calculates the count within a sliding time window. This provides more accurate rate limiting compared to fixed window approaches.
+A flexible and robust rate limiting solution for Ruby on Rails applications. The gem implements a **sliding window log** algorithm, which means it tracks the exact timestamp of each request and calculates the count within a sliding time window. This provides more accurate rate limiting compared to fixed window approaches.
 
 For example, if you set a limit of 100 requests per hour, and a user makes 100 requests at 2:30 PM, they won't be able to make another request until some of those requests "expire" after 2:30 PM the next hour. This prevents the common issue with fixed windows where users could potentially make 200 requests around the window boundary.
 
-Supports rate limiting for both HTTP requests and method calls, with multiple storage backends (Redis, Memcached, Memory).
-Inspired by https://github.com/rails/rails/blob/8-0-sec/actionpack/lib/action_controller/metal/rate_limiting.rb.
+The gem supports rate limiting for both HTTP requests (in controllers) and instance method calls (in any Ruby class), with multiple storage backends (Redis, Memcached, Memory).
 
 ## Installation
 
@@ -30,7 +29,7 @@ Create an initializer `config/initializers/rails_rate_limit.rb`:
 
 ```ruby
 RailsRateLimit.configure do |config|
-  # Required: Choose your default storage backend
+  # Optional: Choose your storage backend (default: :memory)
   config.default_store = :redis # Available options: :redis, :memcached, :memory
   
   # Optional: Configure Redis connection (required if using Redis store)
@@ -47,10 +46,12 @@ RailsRateLimit.configure do |config|
   )
   
   # Optional: Configure logging
+  # set `nil` to disable logging
   config.logger = Rails.logger
   
   # Optional: Configure default handler for controllers (HTTP requests)
-  config.default_on_controller_exceeded = -> {
+  config.handle_controller_exceeded = -> {
+    # Default handler returns a JSON response with a 429 status code
     render json: {
       error: "Too many requests",
       retry_after: response.headers["Retry-After"]
@@ -58,10 +59,9 @@ RailsRateLimit.configure do |config|
   }
   
   # Optional: Configure default handler for methods
-  config.default_on_method_exceeded = -> {
-    # Your default logic for methods
-    # For example: log the event, notify admins, etc.
-    Rails.logger.warn("Rate limit exceeded for #{self.class.name}")
+  # By default, it raises RailsRateLimit::RateLimitExceeded
+  config.handle_klass_exceeded = -> {
+    raise RailsRateLimit::RateLimitExceeded, "Rate limit exceeded"
   }
 end
 ```
@@ -99,7 +99,7 @@ end
 
 ### Rate Limiting Methods
 
-You can limit any method calls in your classes:
+You can limit any instance method in your classes (class methods are not supported yet):
 
 ```ruby
 class ApiClient
@@ -109,7 +109,7 @@ class ApiClient
     # Your API call logic here
   end
 
-  # IMPORTANT: set_rate_limit must be called AFTER method definition 
+  # IMPORTANT: set_rate_limit must be called AFTER method definition
   # Basic usage
   set_rate_limit :make_request,
                 limit: 100,
@@ -122,10 +122,27 @@ class ApiClient
                 by: -> { "client:#{id}" },       # Method call identifier
                 store: :memcached,               # Override default store
                 on_exceeded: -> {                # Custom error handler
+                  # You can handle the error here and return any value (including nil)
                   notify_admin
                   log_exceeded_event
-                  enqueue_retry_job
+                  nil # Method will return nil
                 }
+
+  # Example with default handler that raises error
+  set_rate_limit :risky_method,
+                limit: 5,
+                period: 1.minute
+                # Without on_exceeded option it will use default handler
+                # that raises RailsRateLimit::RateLimitExceeded
+
+  # Example with custom error handling
+  def safe_request
+    risky_method
+  rescue RailsRateLimit::RateLimitExceeded => e
+    # Handle the error
+    Rails.logger.warn("Rate limit exceeded: #{e.message}")
+    nil # or any other fallback value
+  end
 end
 ```
 
@@ -135,8 +152,8 @@ For both controllers and methods:
 - `limit`: (Required) Maximum number of requests/calls allowed
 - `period`: (Required) Time period for the limit (in seconds or ActiveSupport::Duration)
 - `by`: (Optional) Lambda/Proc to generate unique identifier
-  - Default for controllers: `request.remote_ip`
-  - Default for methods: `"#{class_name}:#{id || object_id}"`
+  - Default for controllers: `"#{controller.class.name}:#{controller.request.remote_ip}"`
+  - Default for methods: `"#{self.class.name}##{method_name}:#{respond_to?(:id) ? 'id='+id.to_s : 'object_id='+object_id.to_s}"`
 - `store`: (Optional) Override default storage backend (`:redis`, `:memcached`, `:memory`)
 - `on_exceeded`: (Optional) Custom handler for rate limit exceeded
 
@@ -149,16 +166,34 @@ Additional options for controllers:
 The gem provides different default behaviors for controllers and methods:
 
 1. For controllers (HTTP requests):
-   - The `on_exceeded` handler (or `default_on_controller_exceeded` if not specified) is called
+   - The `on_exceeded` handler (or default handler) is called
    - By default, returns HTTP 429 with a JSON error message
    - Headers are automatically added with limit information
    - The handler's return value is used (usually render/redirect)
 
 2. For methods:
-   - The `on_exceeded` handler (or `default_on_method_exceeded` if not specified) is called
+   - The `on_exceeded` handler (if provided) is called first
+   - Then `RailsRateLimit::RateLimitExceeded` exception is raised
    - The event is logged if a logger is configured
-   - Returns `nil` after handler execution to indicate no result
-   - No exception is raised, making it easier to handle in your code
+   - You should catch the exception to handle the error
+
+### Default error messages
+
+By default, the gem logs the error message to the logger together with your custom `on_exceeded` message.
+```ruby
+@logger.warn(
+  "Rate limit exceeded for #{key}. " \
+  "Limit: #{limit} requests per #{period} seconds"
+)
+# where key for klass is `by` or default unique identifier
+# Rate limit exceeded for ReportGenerator#generate:object_id=218520. Limit: 2 requests per 10 seconds
+# Rate limit exceeded for Notification#deliver:id=1. Limit: 3 requests per 60 seconds
+
+# where key for controller is `by` or default unique identifier
+# Rate limit exceeded for HomeController:127.0.0.1. Limit: 100 requests per 1 minute
+```
+
+You can remove it by setting `config.logger = nil` or specify `by` options.
 
 ### HTTP Headers
 
@@ -183,7 +218,7 @@ For controller rate limiting, the following headers are automatically added:
 - Works well in distributed environments
 - Good option if you're already using Memcached
 
-### Memory
+### Memory (Default)
 - No additional dependencies
 - Perfect for development or single-server setups
 - Data is lost on server restart

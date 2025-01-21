@@ -4,32 +4,31 @@ class HomeController < ApplicationController
   include RailsRateLimit::Controller
 
   set_rate_limit limit: 5,
-                 period: 1.minute,
-                 only: :index
+                 period: 1.minute
 
   def index
     render json: { message: "Hello from rate-limited action!" }
   end
 
   def send_notification
-    notification = Notification.first_or_create!
-    message = notification.deliver
+    notification = Notification.last || Notification.create
+    result = notification.safe_deliver
 
-    if message
-      render json: { message: message }
+    if result
+      render json: { message: result }
     else
-      render json: { error: "Rate limit exceeded for notifications" }, status: :too_many_requests
+      render json: { error: "Failed to deliver notification" }, status: :unprocessable_entity
     end
   end
 
   def generate_report
-    generator = ReportGenerator.new(params[:type] || "default")
-    message = generator.generate
+    organization_id = params[:organization_id] || 1
+    result = ReportGenerator.safe_generate(organization_id)
 
-    if message
-      render json: { message: message }
+    if result
+      render json: { message: result }
     else
-      render json: { error: "Rate limit exceeded for reports" }, status: :too_many_requests
+      render json: { error: "Failed to generate report" }, status: :unprocessable_entity
     end
   end
 end
