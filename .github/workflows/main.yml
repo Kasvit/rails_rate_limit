@@ -10,7 +10,7 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: CI
     strategy:
       matrix:
         ruby:
@@ -43,6 +43,7 @@ jobs:
 
   cd:
     runs-on: ubuntu-latest
+    name: CD
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
