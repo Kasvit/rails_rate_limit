@@ -13,7 +13,9 @@ module RailsRateLimit
         define_method(method_name) do |*args, &block|
           limiter = RateLimiter.new(
             context: self,
-            by: by || -> { "#{self.class.name}:#{respond_to?(:id) ? id : object_id}" },
+            by: by || lambda {
+              "#{self.class.name}##{method_name}:#{respond_to?(:id) ? "id=#{id}" : "object_id=#{object_id}"}"
+            },
             limit: limit,
             period: period.to_i,
             store: store
@@ -23,9 +25,8 @@ module RailsRateLimit
             limiter.perform!
             original_method.bind(self).call(*args, &block)
           rescue RailsRateLimit::RateLimitExceeded
-            handler = on_exceeded.nil? ? RailsRateLimit.configuration.default_on_method_exceeded : on_exceeded
+            handler = on_exceeded.nil? ? RailsRateLimit.configuration.handle_klass_exceeded : on_exceeded
             instance_exec(&handler)
-            nil
           end
         end
       end

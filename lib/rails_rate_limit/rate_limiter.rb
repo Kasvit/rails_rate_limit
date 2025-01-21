@@ -48,8 +48,6 @@ module RailsRateLimit
     end
 
     def resolve_key
-      return context.request.remote_ip if by.nil?
-
       by.is_a?(Proc) ? context.instance_exec(&by) : by
     end
 

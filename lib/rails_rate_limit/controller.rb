@@ -13,7 +13,7 @@ module RailsRateLimit
         before_action(options) do |controller|
           limiter = RateLimiter.new(
             context: controller,
-            by: by,
+            by: by || "#{controller.class.name}:#{controller.request.remote_ip}",
             limit: limit,
             period: period.to_i,
             store: store
@@ -22,7 +22,7 @@ module RailsRateLimit
           begin
             limiter.perform!
           rescue RailsRateLimit::RateLimitExceeded
-            handler = on_exceeded.nil? ? RailsRateLimit.configuration.default_on_controller_exceeded : on_exceeded
+            handler = on_exceeded.nil? ? RailsRateLimit.configuration.handle_controller_exceeded : on_exceeded
             controller.instance_exec(&handler)
           end
         end

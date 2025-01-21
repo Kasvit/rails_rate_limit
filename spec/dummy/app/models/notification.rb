@@ -8,6 +8,13 @@ class Notification < ApplicationRecord
     "Notification #{id} delivered"
   end
 
+  def safe_deliver
+    deliver
+  rescue RailsRateLimit::RateLimitExceeded => e
+    Rails.logger.warn("Rate limit exceeded for notification #{id}: #{e.message}")
+    false
+  end
+
   def on_exceeded
     puts "Rate limit exceeded for notifications"
     nil

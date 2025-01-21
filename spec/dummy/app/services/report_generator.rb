@@ -3,24 +3,29 @@
 class ReportGenerator
   include RailsRateLimit::Klass
 
-  attr_reader :report_type
+  attr_reader :organization_id
 
-  def initialize(report_type)
-    @report_type = report_type
+  def initialize(organization_id)
+    @organization_id = organization_id
   end
 
   def generate
-    "Generated #{report_type} report at #{Time.now}"
-  end
-
-  def on_exceeded
-    puts "Rate limit exceeded for reports"
-    nil
+    "Report for organization #{organization_id} generated at #{Time.now}"
   end
 
   set_rate_limit :generate,
                  limit: 2,
-                 period: 1.minute,
-                 by: -> { "report:#{report_type}" },
-                 on_exceeded: -> { on_exceeded }
+                 period: 10.seconds,
+                 by: -> { "report:org:#{organization_id}" }
+
+  def self.safe_generate(organization_id)
+    new(organization_id).safe_generate
+  end
+
+  def safe_generate
+    generate
+  rescue RailsRateLimit::RateLimitExceeded => e
+    Rails.logger.warn("Rate limit exceeded for organization #{organization_id}: #{e.message}")
+    false
+  end
 end

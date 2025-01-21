@@ -28,7 +28,7 @@ RSpec.describe RailsRateLimit::Klass do
   before do
     RailsRateLimit.configure do |config|
       config.default_store = :memory
-      config.default_on_method_exceeded = -> { nil }
+      config.handle_klass_exceeded = -> { nil }
     end
     RailsRateLimit::Stores::Memory.instance.clear
   end
@@ -134,13 +134,13 @@ RSpec.describe RailsRateLimit::Klass do
         end
       end
 
-      it "executes custom handler and returns nil when limit is exceeded" do
+      it "executes custom handler and returns its result when limit is exceeded" do
         instance = test_class_with_handler.new
 
         2.times { instance.test_method }
 
         result = instance.test_method
-        expect(result).to be_nil
+        expect(result).to eq("rate limit exceeded")
         expect(instance.handler_called).to be true
       end
     end
@@ -160,11 +160,11 @@ RSpec.describe RailsRateLimit::Klass do
         end
       end
 
-      it "executes default handler and returns nil when limit is exceeded" do
+      it "executes default handler and returns its result when limit is exceeded" do
         handler_called = false
 
         RailsRateLimit.configure do |config|
-          config.default_on_method_exceeded = lambda {
+          config.handle_klass_exceeded = lambda {
             handler_called = true
             "default exceeded"
           }
@@ -173,9 +173,23 @@ RSpec.describe RailsRateLimit::Klass do
         instance = test_class_with_default_handler.new
         2.times { instance.test_method }
 
-        expect(instance.test_method).to be_nil
+        expect(instance.test_method).to eq("default exceeded")
         expect(handler_called).to be true
       end
+    end
+
+    it "handles rate limit exceeded with custom handler" do
+      2.times { instance.test_method }
+      
+      result = instance.test_method
+      
+      expect(result).to be_nil
+    end
+
+    it "does not raise error after custom handler execution" do
+      2.times { instance.test_method }
+      
+      expect { instance.test_method }.not_to raise_error
     end
   end
 end

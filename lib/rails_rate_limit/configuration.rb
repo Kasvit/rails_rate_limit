@@ -4,39 +4,40 @@
 module RailsRateLimit
   class Configuration
     attr_accessor :default_store, :redis_connection, :memcached_connection, :logger
-    attr_reader :default_on_controller_exceeded, :default_on_method_exceeded
+    attr_reader :handle_controller_exceeded, :handle_klass_exceeded
 
     def initialize
-      @default_store = :redis
+      @default_store = :memory
       @redis_connection = nil
       @memcached_connection = nil
       @logger = nil
       set_default_handlers
     end
 
-    def default_on_controller_exceeded=(handler)
-      raise ArgumentError, "default_on_controller_exceeded must be a Proc" unless handler.is_a?(Proc)
+    def handle_controller_exceeded=(handler)
+      raise ArgumentError, "handle_controller_exceeded must be a Proc" unless handler.is_a?(Proc)
 
-      @default_on_controller_exceeded = handler
+      @handle_controller_exceeded = handler
     end
 
-    def default_on_method_exceeded=(handler)
-      raise ArgumentError, "default_on_method_exceeded must be a Proc" unless handler.is_a?(Proc)
+    def handle_klass_exceeded=(handler)
+      raise ArgumentError, "handle_klass_exceeded must be a Proc" unless handler.is_a?(Proc)
 
-      @default_on_method_exceeded = handler
+      @handle_klass_exceeded = handler
     end
 
     private
 
     def set_default_handlers
-      @default_on_controller_exceeded = lambda {
+      @handle_controller_exceeded = lambda {
         render json: {
-          error: "Too many requests",
-          retry_after: response.headers["Retry-After"]
+          error: "Too many requests"
         }, status: :too_many_requests
       }
 
-      @default_on_method_exceeded = -> { nil }
+      @handle_klass_exceeded = lambda {
+        raise RailsRateLimit::RateLimitExceeded, "Rate limit exceeded"
+      }
     end
   end
 end
