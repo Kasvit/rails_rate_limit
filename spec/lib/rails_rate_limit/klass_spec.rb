@@ -140,7 +140,6 @@ RSpec.describe RailsRateLimit::Klass do
 
         result = instance.test_method
         expect(result).to eq("rate limit exceeded")
-        expect(result).to eq("rate limit exceeded")
         expect(instance.handler_called).to be true
       end
     end
@@ -173,7 +172,7 @@ RSpec.describe RailsRateLimit::Klass do
         instance = test_class_with_default_handler.new
         2.times { instance.test_method }
 
-і        expect(instance.test_method).to eq("default exceeded")
+        expect(instance.test_method).to eq("default exceeded")
         expect(handler_called).to be true
       end
     end
