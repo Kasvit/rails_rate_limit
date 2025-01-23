@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require "rails_rate_limit"
+require "rails"
+require "rails/generators"
+require "fileutils"
 require "fakeredis"
 require "timecop"
 require "dalli"
@@ -10,11 +13,10 @@ RailsRateLimit.configure do |config|
   config.default_store = :memory
   config.redis_connection = Redis.new
   config.memcached_connection = Dalli::Client.new("localhost:11211")
-  config.logger = Logger.new(nil)
+  config.logger = nil
 end
 
 RSpec.configure do |config|
-  config.example_status_persistence_file_path = ".rspec_status"
   config.disable_monkey_patching!
 
   config.expect_with :rspec do |c|

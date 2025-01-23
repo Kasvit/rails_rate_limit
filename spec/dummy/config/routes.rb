@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
-  get "pages/about"
+  get "/about", to: "pages#about"
+  get "/unlimited", to: "pages#unlimited"
   root "home#index"
 
   get "send_notification", to: "home#send_notification"

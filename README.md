@@ -9,6 +9,17 @@ For example, if you set a limit of 100 requests per hour, and a user makes 100 r
 
 The gem supports rate limiting for both HTTP requests (in controllers) and instance method calls (in any Ruby class), with multiple storage backends (Redis, Memcached, Memory).
 
+## Features
+
+- Multiple storage backends (Redis, Memcached, Memory)
+- Sliding window algorithm for accurate rate limiting
+- Support for both controllers and Ruby classes
+- Multiple rate limits for controllers
+- Custom rate limit names and skipping for controllers
+- Flexible configuration options
+- Automatic HTTP headers
+- Custom error handlers
+
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -23,46 +34,53 @@ And then execute:
 $ bundle install
 ```
 
+Generate the initializer:
+
+```bash
+$ rails generate rails_rate_limit:install
+```
+
+This will create a configuration file at `config/initializers/rails_rate_limit.rb` with all available options commented out.
+
 ## Configuration
 
-Create an initializer `config/initializers/rails_rate_limit.rb`:
+The generated initializer (`config/initializers/rails_rate_limit.rb`) includes all available configuration options with default values commented out. You can uncomment and modify the options you want to customize:
 
 ```ruby
 RailsRateLimit.configure do |config|
-  # Optional: Choose your storage backend (default: :memory)
-  config.default_store = :redis # Available options: :redis, :memcached, :memory
-  
-  # Optional: Configure Redis connection (required if using Redis store)
-  config.redis_connection = Redis.new(
-    url: ENV['REDIS_URL'],
-    timeout: 1,
-    reconnect_attempts: 2
-  )
-  
-  # Optional: Configure Memcached connection (required if using Memcached store)
-  config.memcached_connection = Dalli::Client.new(
-    ENV['MEMCACHED_URL'],
-    { expires_in: 1.day, compress: true }
-  )
-  
-  # Optional: Configure logging
-  # set `nil` to disable logging
-  config.logger = Rails.logger
-  
-  # Optional: Configure default handler for controllers (HTTP requests)
-  config.handle_controller_exceeded = -> {
-    # Default handler returns a JSON response with a 429 status code
-    render json: {
-      error: "Too many requests",
-      retry_after: response.headers["Retry-After"]
-    }, status: :too_many_requests
-  }
-  
-  # Optional: Configure default handler for methods
+  # Choose your storage backend (default: :memory)
+  # Available options: :redis, :memcached, :memory
+  # config.default_store = :memory
+
+  # Configure Redis connection (required if using Redis store)
+  # config.redis_connection = Redis.new(
+  #   url: ENV['REDIS_URL'],
+  #   timeout: 1,
+  #   reconnect_attempts: 2
+  # )
+
+  # Configure Memcached connection (required if using Memcached store)
+  # config.memcached_connection = Dalli::Client.new(
+  #   ENV['MEMCACHED_URL'],
+  #   { expires_in: 1.day, compress: true }
+  # )
+
+  # Configure logging (set to nil to disable logging)
+  # config.logger = Rails.logger
+
+  # Configure default handler for controllers (HTTP requests)
+  # config.handle_controller_exceeded = -> {
+  #   render json: {
+  #     error: "Too many requests",
+  #     retry_after: response.headers["Retry-After"]
+  #   }, status: :too_many_requests
+  # }
+
+  # Configure default handler for methods
   # By default, it raises RailsRateLimit::RateLimitExceeded
-  config.handle_klass_exceeded = -> {
-    raise RailsRateLimit::RateLimitExceeded, "Rate limit exceeded"
-  }
+  # config.handle_klass_exceeded = -> {
+  #   raise RailsRateLimit::RateLimitExceeded, "Rate limit exceeded"
+  # }
 end
 ```
 
@@ -73,8 +91,8 @@ end
 Include the module and set rate limits for your controllers:
 
 ```ruby
-class ApiController < ApplicationController
-  include RailsRateLimit::Controller # include this module
+class UsersController < ApplicationController
+  include RailsRateLimit::Controller    # include this module
 
   # Basic usage - limit all actions
   set_rate_limit limit: 100,            # Maximum requests allowed
@@ -93,7 +111,82 @@ class ApiController < ApplicationController
                     plan_limit: current_user.plan.limit,
                     upgrade_url: pricing_url
                   }, status: :too_many_requests
-                }
+                },
+                as: :custom_rate_limit           # Custom name for rate limit (optional)
+end
+```
+
+### Multiple Rate Limits
+
+You can set multiple rate limits for a single controller or his ancestors. Each rate limit can have its own configuration:
+
+```ruby
+class ApiController < ApplicationController
+  include RailsRateLimit::Controller
+
+  # Global rate limit for all actions
+  set_rate_limit limit: 1000,
+                period: 1.hour,
+                as: :global_rate_limit         # Custom name for rate limit (optional)
+
+  # Stricter limit for write operations
+  set_rate_limit only: [:create, :update, :destroy],
+                limit: 100,
+                period: 1.hour,
+                as: :write_operations_limit    # Custom name for rate limit (optional)
+
+  # Custom limit for specific action
+  set_rate_limit only: [:expensive_operation],
+                limit: 10,
+                period: 1.day,
+                as: :expensive_operation_limit # Custom name for rate limit (optional)
+end
+```
+
+### Custom Rate Limit Names
+
+You can give your rate limits custom names using the `as` option. This is useful for:
+- Better logging and debugging
+- Skipping specific rate limits
+- Better organization of multiple limits
+
+```ruby
+class ApplicationController < ActionController::API
+  include RailsRateLimit::Controller
+
+  # Global rate limit that applies to all inherited controllers
+  set_rate_limit limit: 1000,
+                period: 1.hour,
+                as: :global_rate_limit
+end
+
+class ApiController < ApplicationController
+  # Additional limit for API endpoints
+  set_rate_limit limit: 100,
+                period: 1.minute,
+                as: :api_rate_limit
+end
+```
+
+### Skipping Rate Limits
+
+You can skip specific rate limits for certain actions using `skip_before_action`:
+
+```ruby
+class PaymentsController < ApiController
+  # Skip global rate limit for webhook endpoint
+  skip_before_action :global_rate_limit, only: [:webhook]
+
+  # Skip API rate limit for status check
+  skip_before_action :api_rate_limit, only: [:status]
+
+  def webhook
+    # This action will ignore global rate limit (custom name)
+  end
+
+  def status
+    # This action will ignore API rate limit (custom name)
+  end
 end
 ```
 
@@ -174,6 +267,7 @@ For both controllers and methods:
 - `on_exceeded`: (Optional) Custom handler for rate limit exceeded
 
 Additional options for controllers:
+- `as`: (Optional) Custom name for rate limit
 - `only`: (Optional) Array of action names to limit
 - `except`: (Optional) Array of action names to exclude
 
@@ -204,6 +298,7 @@ By default, the gem logs the error message to the logger together with your cust
 # where key for klass is `by` or default unique identifier
 # Rate limit exceeded for ReportGenerator#generate:object_id=218520. Limit: 2 requests per 10 seconds
 # Rate limit exceeded for Notification#deliver:id=1. Limit: 3 requests per 60 seconds
+# Rate limit exceeded for ReportGenerator.generate. Limit: 2 requests per 10 seconds
 
 # where key for controller is `by` or default unique identifier
 # Rate limit exceeded for HomeController:127.0.0.1. Limit: 100 requests per 1 minute
@@ -220,6 +315,13 @@ For controller rate limiting, the following headers are automatically added:
 
 ## Storage Backends
 
+### Memory (Default)
+- No additional dependencies
+- Perfect for development or single-server setups
+- Data is lost on server restart
+- Not suitable for distributed systems
+- Thread-safe implementation
+
 ### Redis
 - Requires the `redis-rails` gem
 - Best for distributed systems
@@ -233,13 +335,6 @@ For controller rate limiting, the following headers are automatically added:
 - Automatic cleanup via TTL
 - Works well in distributed environments
 - Good option if you're already using Memcached
-
-### Memory (Default)
-- No additional dependencies
-- Perfect for development or single-server setups
-- Data is lost on server restart
-- Not suitable for distributed systems
-- Thread-safe implementation
 
 ## Development
 

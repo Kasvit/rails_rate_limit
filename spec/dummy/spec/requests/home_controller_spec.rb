@@ -24,8 +24,15 @@ RSpec.describe "HomeController", type: :request do
           expect(JSON.parse(response.body)).to eq("message" => "Hello from rate-limited action!")
         end
 
-        it "returns too_many_requests when rate limit exceeded" do
+        it "returns too_many_requests when local rate limit exceeded" do
           5.times { get "/" }
+          get "/"
+          expect(response).to have_http_status(:too_many_requests)
+          expect(JSON.parse(response.body)).to include("error" => "Too many requests")
+        end
+
+        it "returns too_many_requests when global rate limit exceeded" do
+          10.times { get "/" }
           get "/"
           expect(response).to have_http_status(:too_many_requests)
           expect(JSON.parse(response.body)).to include("error" => "Too many requests")
@@ -58,8 +65,15 @@ RSpec.describe "HomeController", type: :request do
           expect(JSON.parse(response.body)).to include("error" => "Failed to deliver notification")
         end
 
-        it "returns too_many_requests when controller rate limit exceeded" do
+        it "returns too_many_requests when local rate limit exceeded" do
           5.times { get "/send_notification" }
+          get "/send_notification"
+          expect(response).to have_http_status(:too_many_requests)
+          expect(JSON.parse(response.body)).to include("error" => "Too many requests")
+        end
+
+        it "returns too_many_requests when global rate limit exceeded" do
+          10.times { get "/send_notification" }
           get "/send_notification"
           expect(response).to have_http_status(:too_many_requests)
           expect(JSON.parse(response.body)).to include("error" => "Too many requests")
@@ -82,8 +96,15 @@ RSpec.describe "HomeController", type: :request do
           expect(JSON.parse(response.body)).to include("error" => "Failed to generate report")
         end
 
-        it "returns too_many_requests when controller rate limit exceeded" do
+        it "returns too_many_requests when local rate limit exceeded" do
           5.times { get "/generate_report", params: { organization_id: organization_id } }
+          get "/generate_report", params: { organization_id: organization_id }
+          expect(response).to have_http_status(:too_many_requests)
+          expect(JSON.parse(response.body)).to include("error" => "Too many requests")
+        end
+
+        it "returns too_many_requests when global rate limit exceeded" do
+          10.times { get "/generate_report", params: { organization_id: organization_id } }
           get "/generate_report", params: { organization_id: organization_id }
           expect(response).to have_http_status(:too_many_requests)
           expect(JSON.parse(response.body)).to include("error" => "Too many requests")
