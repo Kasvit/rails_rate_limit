@@ -6,10 +6,15 @@ RSpec.describe RailsRateLimit::Controller do
   let(:controller_class) do
     Class.new do
       def self.before_action(*args); end
+      def self.skip_before_action(*args); end
       include RailsRateLimit::Controller
 
       def self.name
         "TestController"
+      end
+
+      def request
+        OpenStruct.new(remote_ip: "127.0.0.1")
       end
     end
   end
@@ -24,6 +29,61 @@ RSpec.describe RailsRateLimit::Controller do
         hash_including(limit: 5, period: 60)
       )
       controller_class.set_rate_limit(limit: 5, period: 60)
+    end
+
+    it "accumulates rate limits" do
+      controller_class.set_rate_limit(limit: 5, period: 60)
+      controller_class.set_rate_limit(limit: 10, period: 120)
+      expect(controller_class.rate_limits.length).to eq(2)
+    end
+
+    it "inherits rate limits from parent class" do
+      controller_class.set_rate_limit(limit: 5, period: 60)
+      child_class = Class.new(controller_class) do
+        def self.name
+          "ChildController"
+        end
+      end
+      child_class.set_rate_limit(limit: 10, period: 120)
+
+      expect(child_class.rate_limits.length).to eq(2)
+      expect(controller_class.rate_limits.length).to eq(1)
+    end
+
+    it "creates unique callback names for each rate limit" do
+      first_callback = nil
+      second_callback = nil
+
+      allow(controller_class).to receive(:before_action) do |callback_name|
+        first_callback = callback_name if first_callback.nil?
+        second_callback = callback_name if first_callback && callback_name != first_callback
+      end
+
+      controller_class.set_rate_limit(limit: 5, period: 60)
+      controller_class.set_rate_limit(limit: 10, period: 120)
+
+      expect(first_callback).not_to eq(second_callback)
+    end
+
+    it "allows custom callback names through :as option" do
+      callback_name = nil
+      allow(controller_class).to receive(:before_action) do |name|
+        callback_name = name
+      end
+
+      controller_class.set_rate_limit(limit: 5, period: 60, as: :custom_rate_limit)
+      expect(callback_name).to eq(:custom_rate_limit)
+    end
+
+    it "supports skipping rate limits through skip_before_action" do
+      callback_name = nil
+      allow(controller_class).to receive(:before_action) do |name|
+        callback_name = name
+      end
+
+      controller_class.set_rate_limit(limit: 5, period: 60, as: :custom_rate_limit)
+      expect(controller_class).to respond_to(:skip_before_action)
+      expect(callback_name).to eq(:custom_rate_limit)
     end
 
     context "with invalid options" do

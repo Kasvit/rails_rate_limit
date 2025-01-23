@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 class HomeController < ApplicationController
-  include RailsRateLimit::Controller
-
   set_rate_limit limit: 5,
                  period: 1.minute
 
